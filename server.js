@@ -1,5 +1,6 @@
 const express = require("express");
 const session = require("express-session");
+const sqlite3 = require("sqlite3").verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,18 @@ app.use(session({
   saveUninitialized: true
 }));
 
+// DATABASE
+const db = new sqlite3.Database("./data.db");
+
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      username TEXT PRIMARY KEY,
+      count INTEGER
+    )
+  `);
+});
+
 // LOGIN PAGE
 app.get("/", (req, res) => {
   if (!req.session.user) {
@@ -23,47 +36,62 @@ app.get("/", (req, res) => {
       </form>
     `);
   }
-
   res.redirect("/app");
 });
 
-// HANDLE LOGIN
+// LOGIN
 app.post("/login", (req, res) => {
   const username = req.body.username;
   req.session.user = username;
-  req.session.count = 0;
-  res.redirect("/app");
+
+  db.get("SELECT * FROM users WHERE username = ?", [username], (err, row) => {
+    if (!row) {
+      db.run("INSERT INTO users (username, count) VALUES (?, ?)", [username, 0]);
+    }
+    res.redirect("/app");
+  });
 });
 
-// APP (COUNTER PER USER SESSION)
+// APP
 app.get("/app", (req, res) => {
   if (!req.session.user) return res.redirect("/");
 
-  res.send(`
-    <h1>${req.session.user}'s Counter</h1>
-    <h2 id="count">${req.session.count}</h2>
-    <button onclick="tap()">Tap</button>
-    <br><br>
-    <a href="/logout">Logout</a>
+  db.get("SELECT count FROM users WHERE username = ?", [req.session.user], (err, row) => {
+    const count = row ? row.count : 0;
 
-    <script>
-      function tap() {
-        fetch('/tap', { method: 'POST' })
-          .then(res => res.json())
-          .then(data => {
-            document.getElementById('count').innerText = data.count;
-          });
-      }
-    </script>
-  `);
+    res.send(`
+      <h1>${req.session.user}'s Counter</h1>
+      <h2 id="count">${count}</h2>
+      <button onclick="tap()">Tap</button>
+      <br><br>
+      <a href="/logout">Logout</a>
+
+      <script>
+        function tap() {
+          fetch('/tap', { method: 'POST' })
+            .then(res => res.json())
+            .then(data => {
+              document.getElementById('count').innerText = data.count;
+            });
+        }
+      </script>
+    `);
+  });
 });
 
-// TAP API
+// TAP
 app.post("/tap", (req, res) => {
   if (!req.session.user) return res.json({ count: 0 });
 
-  req.session.count++;
-  res.json({ count: req.session.count });
+  db.run(
+    "UPDATE users SET count = count + 1 WHERE username = ?",
+    [req.session.user],
+    function () {
+      db.get("SELECT count FROM users WHERE username = ?", [req.session.user], (err, row) => {
+        res.json({ count: row.count });
+      });
+    }
+  );
 });
 
 // LOGOUT
