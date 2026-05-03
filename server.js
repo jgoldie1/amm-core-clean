@@ -1,30 +1,9 @@
 const express = require("express");
-const fs = require("fs");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-let count = 0;
-
-// load saved count
-if (fs.existsSync("count.json")) {
-  const data = JSON.parse(fs.readFileSync("count.json"));
-  count = data.count;
-}
-
-// tap route
-app.post("/tap", (req, res) => {
-  count++;
-  fs.writeFileSync("count.json", JSON.stringify({ count }));
-  res.json({ count });
-});
-
-// get current state
-app.get("/api/state", (req, res) => {
-  res.json({ count });
-});
-
-// UI (THIS is what makes the button work)
+// UI with per-user counter (safe + simple)
 app.get("/", (req, res) => {
   res.send(`
     <html>
@@ -33,16 +12,18 @@ app.get("/", (req, res) => {
         <button onclick="tap()" style="font-size:20px;">Tap</button>
 
         <script>
-          async function load() {
-            const res = await fetch('/api/state');
-            const data = await res.json();
-            document.getElementById('count').innerText = data.count;
+          let count = 0;
+
+          function load() {
+            const saved = localStorage.getItem("count");
+            count = saved ? parseInt(saved) : 0;
+            document.getElementById('count').innerText = count;
           }
 
-          async function tap() {
-            const res = await fetch('/tap', { method: 'POST' });
-            const data = await res.json();
-            document.getElementById('count').innerText = data.count;
+          function tap() {
+            count++;
+            localStorage.setItem("count", count);
+            document.getElementById('count').innerText = count;
           }
 
           load();
